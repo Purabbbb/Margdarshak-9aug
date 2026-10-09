@@ -1,12 +1,12 @@
 """
 bot.py
 ------
-PIPELINE STEP 9: Chatbot with DistilBERT Intent Classification
+PIPELINE STEP 9: Chatbot with Lightweight ML Intent Classification
 
 Architecture:
-  1. Intent Classification — fine-tuned DistilBERT model
-     (distilbert-base-uncased, fine-tuned on 630 career chatbot examples)
-     Falls back to keyword classifier if model is not available.
+  1. Intent Classification — Lightweight Scikit-Learn (TF-IDF + Logistic Regression)
+     Fast (<1ms), ultra-compact (<120KB), zero PyTorch/Transformers overhead.
+     Falls back to keyword classifier if necessary.
 
   2. Response Generation — each intent has a dedicated handler that reads
      the actual resume analysis data and builds a specific, accurate response.
@@ -14,7 +14,7 @@ Architecture:
 Intent classes (9):
   GREETING, BEST_ROLE, SKILLS, GAP, COURSES, JOBS, PROFILE, SALARY, IMPROVE
 
-Model location: backend/chatbot/intent_classifier/
+Model location: backend/chatbot/intent_classifier.py
 """
 
 import os
@@ -22,80 +22,16 @@ import json
 import random
 from pathlib import Path
 
-# ── Model loading ─────────────────────────────────────────────────────────────
-
-MODEL_DIR = Path(__file__).parent / "intent_classifier"
-_model = None
-_tokenizer = None
-_label_map = None
-_device = None
-
-
-def _load_model():
-    """
-    Loads the fine-tuned DistilBERT model on first call.
-    Uses lazy loading so startup time is not affected.
-    Falls back to keyword classifier if model files are missing.
-    """
-    global _model, _tokenizer, _label_map, _device
-
-    if _model is not None:
-        return True  # already loaded
-
-    if not MODEL_DIR.exists():
-        print(f"[bot.py] Model directory not found at {MODEL_DIR}. Using keyword fallback.")
-        return False
-
+try:
+    from backend.chatbot.intent_classifier import get_classifier
+except ModuleNotFoundError:
     try:
-        import torch
-        from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification
-
-        _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        _tokenizer = DistilBertTokenizerFast.from_pretrained(str(MODEL_DIR))
-        _model = DistilBertForSequenceClassification.from_pretrained(str(MODEL_DIR))
-        _model.to(_device)
-        _model.eval()
-
-        with open(MODEL_DIR / "label_map.json") as f:
-            _label_map = json.load(f)
-
-        print(f"[bot.py] DistilBERT intent classifier loaded on {_device}.")
-        return True
-
-    except Exception as e:
-        print(f"[bot.py] Could not load DistilBERT model: {e}. Using keyword fallback.")
-        _model = None
-        return False
+        from chatbot.intent_classifier import get_classifier
+    except ModuleNotFoundError:
+        from intent_classifier import get_classifier
 
 
-def _classify_with_bert(message: str) -> tuple[str, float]:
-    """
-    Runs inference through the fine-tuned DistilBERT model.
-    Returns (intent_label, confidence_score).
-    """
-    import torch
-
-    inputs = _tokenizer(
-        message,
-        return_tensors="pt",
-        truncation=True,
-        padding=True,
-        max_length=64
-    )
-    inputs = {k: v.to(_device) for k, v in inputs.items()}
-
-    with torch.no_grad():
-        outputs = _model(**inputs)
-        probs = torch.softmax(outputs.logits, dim=1)
-        pred_idx = torch.argmax(probs, dim=1).item()
-        confidence = probs[0][pred_idx].item()
-
-    intent = _label_map["labels"][pred_idx]
-    return intent, round(confidence, 4)
-
-
-# ── Keyword fallback classifier (identical to original) ───────────────────────
+# ── Keyword fallback classifier (safety backup) ───────────────────────────────
 
 INTENT_PATTERNS = {
     "BEST_ROLE": [
@@ -371,10 +307,10 @@ HANDLERS = {
 
 def chat(user_message: str, analysis: dict, history: list) -> dict:
     """
-    Classifies intent using fine-tuned DistilBERT, then generates
+    Classifies intent using lightweight ML classifier, then generates
     a data-driven response from the resume analysis.
 
-    Falls back to keyword classifier if the model is unavailable.
+    Falls back to keyword classifier if necessary.
 
     Args:
         user_message: User input string
@@ -384,12 +320,11 @@ def chat(user_message: str, analysis: dict, history: list) -> dict:
     Returns:
         dict with response text, intent, confidence, and method used
     """
-    model_available = _load_model()
-
-    if model_available:
-        intent, confidence = _classify_with_bert(user_message)
-        method = f"distilbert (confidence: {confidence:.2%})"
-    else:
+    try:
+        classifier = get_classifier()
+        intent, confidence = classifier.classify(user_message)
+        method = f"lightweight_ml (confidence: {confidence:.2%})"
+    except Exception as e:
         intent = _classify_with_keywords(user_message)
         confidence = None
         method = "keyword_fallback"

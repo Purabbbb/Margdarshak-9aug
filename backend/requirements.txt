@@ -6,14 +6,9 @@ spacy
 nltk
 scikit-learn
 numpy
+joblib
 requests
 python-dotenv
 pydantic
-transformers
-sentence-transformers
-torch --index-url https://download.pytorch.org/whl/cpu
-gdown
 Pillow
 pytesseract
-
-

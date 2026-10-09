@@ -36,7 +36,7 @@ export default function AboutGrid() {
     {
       step: '07',
       title: 'Intelligent Career Interaction',
-      description: 'A DistilBERT intent-classification chatbot with RAG supports contextual, conversational career guidance.'
+      description: 'A lightweight ML intent-classification chatbot with contextual RAG supports instant, conversational career guidance.'
     }
   ]
 

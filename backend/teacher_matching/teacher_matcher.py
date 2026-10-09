@@ -5,7 +5,7 @@ Hybrid Teacher / Expert Matching Engine.
 
 Implements the multi-criteria ranking algorithm:
   0.40 * Skill Gap Coverage
-+ 0.30 * Semantic Similarity (Sentence-Transformers with TF-IDF fallback)
++ 0.30 * Semantic Similarity (Fast Scikit-Learn TF-IDF N-gram Matching)
 + 0.15 * Role / Domain Relevance
 + 0.10 * Experience Score
 + 0.05 * Rating Score
@@ -13,7 +13,7 @@ Implements the multi-criteria ranking algorithm:
 Features:
 - Canonical skill normalization reusing the skills database.
 - Explainable recommendation breakdowns.
-- Model caching (never loads embedding model per request).
+- Pure scikit-learn TF-IDF semantic matching (zero PyTorch/Transformer bloat).
 - Pre-filtering to discard completely irrelevant candidates.
 """
 
@@ -100,29 +100,6 @@ def normalize_skill(skill: str) -> str:
     if cleaned in ALL_CANONICAL_SKILLS:
         return cleaned
     return cleaned
-
-
-# ----------------- Cached Semantic Embedding Model -----------------
-_EMBEDDING_MODEL = None
-_EMBEDDING_MODEL_LOADED = False
-
-def get_sentence_transformer_model():
-    """Load and cache SentenceTransformer model if available locally without network hang."""
-    global _EMBEDDING_MODEL, _EMBEDDING_MODEL_LOADED
-    if _EMBEDDING_MODEL_LOADED:
-        return _EMBEDDING_MODEL
-
-    try:
-        from sentence_transformers import SentenceTransformer
-        # Check local cache first to avoid slow or blocked network downloads
-        _EMBEDDING_MODEL = SentenceTransformer("all-MiniLM-L6-v2", local_files_only=True)
-    except Exception:
-        # Graceful fallback to TF-IDF / sklearn
-        _EMBEDDING_MODEL = None
-    finally:
-        _EMBEDDING_MODEL_LOADED = True
-
-    return _EMBEDDING_MODEL
 
 
 # Role to domain associations
@@ -380,7 +357,7 @@ class TeacherMatcher:
         for i, rec in enumerate(top_recs, start=1):
             rec.rank = i
 
-        method_note = "hybrid semantic (SentenceTransformers / TF-IDF) + skill coverage (0.40) + role relevance (0.15) ranking"
+        method_note = "hybrid semantic (TF-IDF N-gram) + skill coverage (0.40) + role relevance (0.15) ranking"
 
         return TeacherRecommendResponse(
             status="success",
